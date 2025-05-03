@@ -1,0 +1,35 @@
+@import "tailwindcss";
+
+/* Basic fade-in animation for new comments */
+.comment-item {
+    transition: opacity 0.5s ease-in-out;
+    opacity: 1;
+  }
+  
+  .comment-item-enter {
+    opacity: 0;
+  }
+  
+  .comment-item-enter-active {
+    opacity: 1;
+  }
+  
+  /* Animation for edit form toggle */
+  .edit-form-container {
+    transition: max-height 0.3s ease-out, opacity 0.3s ease-out;
+    overflow: hidden;
+    max-height: 0;
+    opacity: 0;
+  }
+  
+  .edit-form-container-visible {
+    max-height: 200px; /* Adjust as needed */
+    opacity: 1;
+  }
+  
+  /* Centered spinner helper */
+  .spinner-centered {
+      display: inline-block; /* Or block depending on context */
+      vertical-align: middle; /* Helps align if used inline */
+      /* Add margin if needed */
+  }

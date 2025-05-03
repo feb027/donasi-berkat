@@ -1,0 +1,296 @@
+-- Ekstensi jika belum diaktifkan (Supabase biasanya sudah mengaktifkannya)
+-- CREATE EXTENSION IF NOT EXISTS moddatetime; -- Untuk trigger updated_at (opsional, bisa pakai cara bawah)
+-- CREATE EXTENSION IF NOT EXISTS pgcrypto; -- Untuk gen_random_uuid() jika belum ada
+
+-- 1. Tabel Profil Pengguna (Terkait dengan auth.users)
+CREATE TABLE public.profil (
+  id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
+  nama_pengguna TEXT UNIQUE NOT NULL CHECK (char_length(nama_pengguna) >= 3),
+  nama_lengkap TEXT NULL,
+  avatar_url TEXT NULL,
+  created_at TIMESTAMPTZ DEFAULT now() NOT NULL,
+  updated_at TIMESTAMPTZ DEFAULT now() NOT NULL,
+  bio TEXT
+  role 
+
+  CONSTRAINT proper_url CHECK (avatar_url IS NULL OR avatar_url ~* '^https?://.+')
+);
+
+COMMENT ON TABLE public.profil IS 'Menyimpan data profil publik pengguna, terhubung ke auth.users.';
+COMMENT ON COLUMN public.profil.id IS 'Referensi ke id pengguna di auth.users.';
+COMMENT ON COLUMN public.profil.nama_pengguna IS 'Nama pengguna unik untuk ditampilkan publik.';
+COMMENT ON COLUMN public.profil.nama_lengkap IS 'Nama lengkap pengguna (opsional).';
+COMMENT ON COLUMN public.profil.avatar_url IS 'URL ke gambar avatar pengguna (opsional).';
+
+-- 2. Tabel Kategori Donasi
+CREATE TABLE public.kategori (
+  id SERIAL PRIMARY KEY,
+  nama TEXT UNIQUE NOT NULL,
+  slug TEXT UNIQUE NOT NULL
+);
+
+COMMENT ON TABLE public.kategori IS 'Menyimpan kategori untuk barang donasi.';
+COMMENT ON COLUMN public.kategori.nama IS 'Nama kategori (e.g., Pakaian, Buku).';
+COMMENT ON COLUMN public.kategori.slug IS 'Versi URL-friendly dari nama kategori.';
+
+-- 3. Tabel Donasi
+CREATE TABLE public.donasi (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+  id_donatur UUID REFERENCES public.profil(id) ON DELETE CASCADE NOT NULL, -- Jika profil dihapus, donasinya juga hilang (sesuaikan jika perlu)
+  id_kategori INTEGER REFERENCES public.kategori(id) ON DELETE SET NULL NULL, -- Jika kategori dihapus, set ke NULL
+  judul TEXT NOT NULL,
+  deskripsi TEXT NULL,
+  kondisi TEXT NULL CHECK (kondisi IN ('Baru', 'Layak Pakai', 'Perlu Perbaikan Kecil', 'Rusak (untuk suku cadang)')), -- Contoh kondisi
+  url_gambar TEXT[] NULL, -- Array URL gambar dari Supabase Storage
+  status TEXT DEFAULT 'tersedia' NOT NULL CHECK (status IN ('tersedia', 'dipesan', 'didonasikan')),
+  created_at TIMESTAMPTZ DEFAULT now() NOT NULL,
+  updated_at TIMESTAMPTZ DEFAULT now() NOT NULL,
+  latitude DOUBLE PRECISION NULL,
+  longitude DOUBLE PRECISION NULL
+);
+
+-- Tambahkan kolom Latitude dan Longitude
+ALTER TABLE public.donasi ADD COLUMN latitude DOUBLE PRECISION NULL;
+ALTER TABLE public.donasi ADD COLUMN longitude DOUBLE PRECISION NULL;
+
+COMMENT ON TABLE public.donasi IS 'Menyimpan informasi barang yang didonasikan.';
+COMMENT ON COLUMN public.donasi.id_donatur IS 'Referensi ke profil pengguna yang mendonasikan.';
+COMMENT ON COLUMN public.donasi.id_kategori IS 'Referensi ke kategori barang donasi.';
+COMMENT ON COLUMN public.donasi.judul IS 'Judul atau nama barang donasi.';
+COMMENT ON COLUMN public.donasi.deskripsi IS 'Deskripsi detail barang donasi.';
+COMMENT ON COLUMN public.donasi.kondisi IS 'Kondisi barang donasi.';
+COMMENT ON COLUMN public.donasi.url_gambar IS 'Array URL gambar barang.';
+COMMENT ON COLUMN public.donasi.status IS 'Status terkini barang donasi.';
+COMMENT ON COLUMN public.donasi.latitude IS 'Koordinat Lintang lokasi donasi (opsional).';
+COMMENT ON COLUMN public.donasi.longitude IS 'Koordinat Bujur lokasi donasi (opsional).';
+
+-- 4. Tabel Permintaan Donasi (Ketertarikan Pengguna)
+CREATE TABLE public.permintaan_donasi (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+  id_donasi UUID REFERENCES public.donasi(id) ON DELETE CASCADE NOT NULL, -- Jika donasi dihapus, permintaan terkait hilang
+  id_peminta UUID REFERENCES public.profil(id) ON DELETE CASCADE NOT NULL, -- Jika peminta dihapus, permintaannya hilang
+  status TEXT DEFAULT 'pending' NOT NULL CHECK (status IN ('pending', 'diterima', 'ditolak', 'selesai')),
+  pesan TEXT NULL, -- Pesan dari peminta (opsional)
+  created_at TIMESTAMPTZ DEFAULT now() NOT NULL,
+
+  -- Mencegah pengguna yang sama meminta donasi yang sama berkali-kali
+  CONSTRAINT unique_request UNIQUE (id_donasi, id_peminta)
+);
+
+COMMENT ON TABLE public.permintaan_donasi IS 'Mencatat ketertarikan/permintaan pengguna terhadap suatu donasi.';
+COMMENT ON COLUMN public.permintaan_donasi.id_donasi IS 'Referensi ke donasi yang diminta.';
+COMMENT ON COLUMN public.permintaan_donasi.id_peminta IS 'Referensi ke profil pengguna yang meminta.';
+COMMENT ON COLUMN public.permintaan_donasi.status IS 'Status permintaan donasi.';
+COMMENT ON COLUMN public.permintaan_donasi.pesan IS 'Pesan awal dari peminta.';
+
+-- 5. Fungsi dan Trigger untuk Otomatis Update `updated_at`
+-- Fungsi untuk update kolom updated_at
+CREATE OR REPLACE FUNCTION public.trigger_set_timestamp()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.updated_at = NOW();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Trigger untuk tabel 'profil'
+CREATE TRIGGER set_timestamp_profil
+BEFORE UPDATE ON public.profil
+FOR EACH ROW
+EXECUTE FUNCTION public.trigger_set_timestamp();
+
+-- Trigger untuk tabel 'donasi'
+CREATE TRIGGER set_timestamp_donasi
+BEFORE UPDATE ON public.donasi
+FOR EACH ROW
+EXECUTE FUNCTION public.trigger_set_timestamp();
+
+-- (Tidak perlu trigger untuk 'permintaan_donasi' karena biasanya statusnya final setelah diubah)
+-- (Tidak perlu trigger untuk 'kategori' karena jarang diupdate)
+
+
+-- 6. Data Awal untuk Tabel Kategori
+INSERT INTO public.kategori (nama, slug) VALUES
+  ('Pakaian', 'pakaian'),
+  ('Perabot Rumah Tangga', 'perabot-rumah-tangga'),
+  ('Elektronik', 'elektronik'),
+  ('Buku & Majalah', 'buku-majalah'),
+  ('Mainan Anak', 'mainan-anak'),
+  ('Peralatan Dapur', 'peralatan-dapur'),
+  ('Lainnya', 'lainnya');
+
+-- AKTIFKAN ROW LEVEL SECURITY (PENTING!)
+-- Jangan lupa aktifkan RLS untuk setiap tabel ini di UI Supabase
+-- dan definisikan policy yang sesuai setelahnya.
+ALTER TABLE public.profil ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.kategori ENABLE ROW LEVEL SECURITY; -- Mungkin hanya perlu SELECT publik
+ALTER TABLE public.donasi ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.permintaan_donasi ENABLE ROW LEVEL SECURITY;
+
+-- Contoh Policy sederhana (Harus disesuaikan!)
+-- Hanya untuk ilustrasi, kebijakan RLS sebenarnya akan lebih kompleks
+
+-- Profil: Pengguna bisa lihat semua profil, tapi hanya bisa update profil sendiri
+CREATE POLICY "Public profiles are viewable by everyone." ON public.profil FOR SELECT USING (true);
+CREATE POLICY "Users can insert their own profile." ON public.profil FOR INSERT WITH CHECK (auth.uid() = id);
+CREATE POLICY "Users can update own profile." ON public.profil FOR UPDATE USING (auth.uid() = id) WITH CHECK (auth.uid() = id);
+
+-- Kategori: Bisa dilihat semua orang
+CREATE POLICY "Categories are viewable by everyone." ON public.kategori FOR SELECT USING (true);
+
+-- Donasi: Bisa dilihat semua orang, dibuat oleh pengguna terautentikasi, diupdate/delete oleh pemilik
+CREATE POLICY "Donations are viewable by everyone." ON public.donasi FOR SELECT USING (true);
+CREATE POLICY "Users can create donations." ON public.donasi FOR INSERT WITH CHECK (auth.uid() = id_donatur);
+CREATE POLICY "Users can update their own donations." ON public.donasi FOR UPDATE USING (auth.uid() = id_donatur) WITH CHECK (auth.uid() = id_donatur);
+CREATE POLICY "Users can delete their own donations." ON public.donasi FOR DELETE USING (auth.uid() = id_donatur);
+
+-- Permintaan Donasi: Dilihat oleh peminta/donatur, dibuat oleh peminta, diupdate oleh donatur
+CREATE POLICY "Requesters can see their requests." ON public.permintaan_donasi FOR SELECT USING (auth.uid() = id_peminta);
+-- (Perlu join untuk cek id_donatur dari donasi agar donatur juga bisa lihat)
+-- CREATE POLICY "Donors can see requests for their donations." ON public.permintaan_donasi FOR SELECT USING (EXISTS (SELECT 1 FROM donasi WHERE donasi.id = permintaan_donasi.id_donasi AND donasi.id_donatur = auth.uid()));
+CREATE POLICY "Users can create requests." ON public.permintaan_donasi FOR INSERT WITH CHECK (auth.uid() = id_peminta);
+-- (Kebijakan update perlu lebih detail, misal hanya donatur yang bisa ubah status 'diterima'/'ditolak')
+
+-- 5. Tabel Diskusi Donasi (Pertanyaan & Jawaban)
+CREATE TABLE public.diskusi_donasi (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+  id_donasi UUID REFERENCES public.donasi(id) ON DELETE CASCADE NOT NULL, -- Jika donasi dihapus, diskusi hilang
+  id_pengirim UUID REFERENCES public.profil(id) ON DELETE CASCADE NOT NULL, -- Jika pengirim dihapus, diskusinya hilang
+  parent_id UUID REFERENCES public.diskusi_donasi(id) ON DELETE CASCADE NULL, -- NULL untuk pertanyaan, ID pertanyaan untuk jawaban
+  isi_diskusi TEXT NOT NULL CHECK (char_length(isi_diskusi) > 0),
+  created_at TIMESTAMPTZ DEFAULT now() NOT NULL
+);
+
+COMMENT ON TABLE public.diskusi_donasi IS 'Menyimpan pertanyaan dan jawaban terkait donasi.';
+COMMENT ON COLUMN public.diskusi_donasi.id_donasi IS 'Referensi ke donasi yang didiskusikan.';
+COMMENT ON COLUMN public.diskusi_donasi.id_pengirim IS 'Referensi ke profil pengguna yang mengirim (penanya/penjawab).';
+COMMENT ON COLUMN public.diskusi_donasi.parent_id IS 'ID diskusi induk (pertanyaan) jika ini adalah jawaban.';
+COMMENT ON COLUMN public.diskusi_donasi.isi_diskusi IS 'Isi teks pertanyaan atau jawaban.';
+
+-- Buat Index untuk performa query jawaban
+CREATE INDEX idx_diskusi_donasi_parent_id ON public.diskusi_donasi(parent_id);
+CREATE INDEX idx_diskusi_donasi_id_donasi ON public.diskusi_donasi(id_donasi);
+
+-- RLS untuk tabel lain ...
+ALTER TABLE public.diskusi_donasi ENABLE ROW LEVEL SECURITY;
+
+-- Diskusi Donasi:
+-- SELECT: Semua pengguna terautentikasi bisa melihat diskusi
+CREATE POLICY "Authenticated users can view discussions." ON public.diskusi_donasi FOR SELECT USING (auth.role() = 'authenticated');
+
+-- INSERT (Pertanyaan): Pengguna terautentikasi (bukan pemilik donasi) bisa bertanya
+CREATE POLICY "Users can ask questions on donations." ON public.diskusi_donasi FOR INSERT WITH CHECK (
+    auth.role() = 'authenticated' AND
+    parent_id IS NULL AND -- Memastikan ini pertanyaan baru
+    auth.uid() = id_pengirim AND -- Pengirim adalah user saat ini
+    EXISTS ( -- Memastikan pengirim bukan pemilik donasi
+        SELECT 1 FROM donasi d WHERE d.id = id_donasi AND d.id_donatur <> auth.uid()
+    )
+);
+
+-- INSERT (Jawaban): Hanya pemilik donasi yang bisa menjawab pertanyaan untuk donasinya
+CREATE POLICY "Donors can answer questions on their donations." ON public.diskusi_donasi FOR INSERT WITH CHECK (
+    auth.role() = 'authenticated' AND
+    parent_id IS NOT NULL AND -- Memastikan ini jawaban
+    auth.uid() = id_pengirim AND -- Penjawab adalah user saat ini
+    EXISTS ( -- Memastikan penjawab adalah pemilik donasi terkait
+        SELECT 1 FROM donasi d
+        JOIN diskusi_donasi pertanyaan ON d.id = pertanyaan.id_donasi
+        WHERE pertanyaan.id = parent_id AND d.id = id_donasi AND d.id_donatur = auth.uid()
+    )
+);
+-- (Policy UPDATE/DELETE bisa ditambahkan jika perlu, misal pemilik bisa hapus jawaban/pertanyaan di donasinya)
+
+-- 7. Tabel Definisi Badge/Achievement
+CREATE TABLE public.badges (
+    id SERIAL PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE,
+    description TEXT NOT NULL,
+    icon_name TEXT NOT NULL, -- e.g., "GiftIcon", "SparklesIcon" (referencing Heroicons)
+    color_class TEXT DEFAULT 'text-gray-500' NOT NULL, -- e.g., "text-yellow-500", "text-emerald-500"
+    created_at TIMESTAMPTZ DEFAULT now() NOT NULL
+);
+
+COMMENT ON TABLE public.badges IS 'Definisi untuk berbagai badge atau pencapaian.';
+COMMENT ON COLUMN public.badges.name IS 'Nama badge (e.g., Donatur Pertama).';
+COMMENT ON COLUMN public.badges.description IS 'Penjelasan singkat tentang cara mendapatkan badge.';
+COMMENT ON COLUMN public.badges.icon_name IS 'Nama ikon dari Heroicons (Outline) untuk ditampilkan.';
+COMMENT ON COLUMN public.badges.color_class IS 'Kelas Tailwind CSS untuk warna ikon.';
+
+-- 8. Tabel Badge yang Dimiliki Pengguna (User Badges)
+CREATE TABLE public.user_badges (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+    user_id UUID REFERENCES public.profil(id) ON DELETE CASCADE NOT NULL,
+    badge_id INTEGER REFERENCES public.badges(id) ON DELETE CASCADE NOT NULL,
+    earned_at TIMESTAMPTZ DEFAULT now() NOT NULL,
+
+    CONSTRAINT unique_user_badge UNIQUE (user_id, badge_id) -- Pengguna hanya bisa dapat 1 badge jenis yg sama
+);
+
+COMMENT ON TABLE public.user_badges IS 'Menghubungkan pengguna dengan badge yang telah mereka peroleh.';
+COMMENT ON COLUMN public.user_badges.user_id IS 'ID pengguna yang memperoleh badge.';
+COMMENT ON COLUMN public.user_badges.badge_id IS 'ID badge yang diperoleh.';
+COMMENT ON COLUMN public.user_badges.earned_at IS 'Tanggal badge diperoleh.';
+
+-- RLS untuk Tabel Badges (Diasumsikan publik)
+ALTER TABLE public.badges ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Badges are viewable by everyone." ON public.badges FOR SELECT USING (true);
+-- (Admin policies for INSERT/UPDATE/DELETE would be needed)
+
+-- RLS untuk Tabel User Badges (Diasumsikan publik)
+ALTER TABLE public.user_badges ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "User badges are viewable by everyone." ON public.user_badges FOR SELECT USING (true);
+-- (Admin policies for INSERT/DELETE needed to award badges)
+-- (Users might be allowed to delete their own? Unlikely.)
+
+-- 9. Tabel Permintaan Barang (Wishlist)
+CREATE TABLE public.permintaan_barang (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+    id_peminta UUID REFERENCES public.profil(id) ON DELETE CASCADE NOT NULL,
+    id_kategori INTEGER REFERENCES public.kategori(id) ON DELETE SET NULL NULL, -- Opsional, untuk filter
+    judul TEXT NOT NULL CHECK (char_length(judul) > 5),
+    deskripsi TEXT NULL,
+    lokasi_kecamatan TEXT NULL, -- Lokasi peminta (opsional)
+    status TEXT DEFAULT 'aktif' NOT NULL CHECK (status IN ('aktif', 'dipenuhi', 'dihapus')),
+    created_at TIMESTAMPTZ DEFAULT now() NOT NULL,
+    updated_at TIMESTAMPTZ DEFAULT now() NOT NULL
+);
+
+COMMENT ON TABLE public.permintaan_barang IS 'Menyimpan daftar barang yang dibutuhkan/dicari oleh pengguna (wishlist).';
+COMMENT ON COLUMN public.permintaan_barang.id_peminta IS 'Referensi ke profil pengguna yang membuat permintaan.';
+COMMENT ON COLUMN public.permintaan_barang.id_kategori IS 'Referensi ke kategori barang yang dicari (opsional).';
+COMMENT ON COLUMN public.permintaan_barang.judul IS 'Nama atau jenis barang yang dicari.';
+COMMENT ON COLUMN public.permintaan_barang.deskripsi IS 'Deskripsi lebih detail mengenai kebutuhan.';
+COMMENT ON COLUMN public.permintaan_barang.lokasi_kecamatan IS 'Lokasi kecamatan peminta (opsional, untuk pencarian terdekat).';
+COMMENT ON COLUMN public.permintaan_barang.status IS 'Status permintaan barang (aktif, sudah dipenuhi, dihapus).';
+
+-- Index untuk pencarian dan filter
+CREATE INDEX idx_permintaan_barang_peminta ON public.permintaan_barang(id_peminta);
+CREATE INDEX idx_permintaan_barang_kategori ON public.permintaan_barang(id_kategori);
+CREATE INDEX idx_permintaan_barang_status ON public.permintaan_barang(status);
+
+-- Trigger untuk updated_at pada permintaan_barang
+CREATE TRIGGER set_timestamp_permintaan_barang
+BEFORE UPDATE ON public.permintaan_barang
+FOR EACH ROW
+EXECUTE FUNCTION public.trigger_set_timestamp();
+
+-- RLS untuk Permintaan Barang (Wishlist)
+ALTER TABLE public.permintaan_barang ENABLE ROW LEVEL SECURITY;
+
+-- SELECT: Semua pengguna terautentikasi bisa melihat permintaan yang aktif
+CREATE POLICY "Active wishlists are viewable by authenticated users." ON public.permintaan_barang FOR SELECT
+    USING (auth.role() = 'authenticated' AND status = 'aktif');
+
+-- INSERT: Pengguna terautentikasi bisa membuat permintaan untuk dirinya sendiri
+CREATE POLICY "Users can insert their own wishlist items." ON public.permintaan_barang FOR INSERT
+    WITH CHECK (auth.uid() = id_peminta);
+
+-- UPDATE: Pengguna hanya bisa update (misal status ke 'dipenuhi' atau edit deskripsi) permintaannya sendiri
+CREATE POLICY "Users can update their own wishlist items." ON public.permintaan_barang FOR UPDATE
+    USING (auth.uid() = id_peminta)
+    WITH CHECK (auth.uid() = id_peminta);
+
+-- DELETE: Pengguna hanya bisa delete (atau set status ke 'dihapus') permintaannya sendiri
+CREATE POLICY "Users can delete their own wishlist items." ON public.permintaan_barang FOR DELETE
+    USING (auth.uid() = id_peminta);
