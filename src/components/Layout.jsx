@@ -19,6 +19,7 @@ import {
 import { FaFacebookF, FaInstagram, FaTwitter } from 'react-icons/fa';
 import ChatWidget from './ChatWidget';
 import ChatTriggerButton from './ChatTriggerButton';
+import logoKecilUrl from '../assets/logo-kecil.png';
 
 function formatRelativeTime(dateString) {
   if (!dateString) return '';
@@ -134,7 +135,7 @@ function Layout() {
       <header className={`bg-white text-gray-800 sticky top-0 z-50 border-b border-gray-200 transition-shadow duration-200 ${isScrolled ? 'shadow-md bg-white/95 backdrop-blur-sm' : 'shadow-sm'}`}>
          <div className="container mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between h-16">
              <Link to="/" className="flex items-center gap-2 group flex-shrink-0">
-                 <img src="../src/assets/logo-kecil.png" alt="DonasiBerkat Logo" className="h-9 w-auto transition-opacity duration-150 group-hover:opacity-85" />
+                 <img src={logoKecilUrl} alt="DonasiBerkat Logo" className="h-9 w-auto transition-opacity duration-150 group-hover:opacity-85" />
                  <span className="text-xl font-bold text-emerald-600 transition-colors duration-150 group-hover:text-emerald-700">
                      DonasiBerkat
                  </span>
@@ -523,7 +524,7 @@ function Layout() {
               
               <div className="space-y-4 pr-4">
                 <Link to="/" className="flex items-center gap-2 group mb-2">
-                   <img src="../src/assets/logo-kecil.png" alt="DonasiBerkat Logo" className="h-8 w-auto" /> 
+                   <img src={logoKecilUrl} alt="DonasiBerkat Logo" className="h-8 w-auto" /> 
                    <span className="text-lg font-bold text-white">
                        DonasiBerkat
                    </span>
