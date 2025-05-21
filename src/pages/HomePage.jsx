@@ -9,6 +9,8 @@ import { GiftIcon, ArrowRightIcon, ClockIcon, HeartIcon, SparklesIcon, ChevronDo
 import { formatDistanceToNow } from 'date-fns';
 import { id as localeID } from 'date-fns/locale';
 
+import heroImageUrl from '../assets/hero.png';
+
 function PlaceholderDonationCard() {
   return (
     <div className="border border-gray-200 rounded-lg overflow-hidden shadow-sm bg-white animate-pulse">
@@ -228,7 +230,7 @@ function HomePage() {
                 {/* Hapus aspect ratio container, batasi max-height jika perlu, sesuaikan img */}
                 <div className="rounded-2xl shadow-lg overflow-hidden max-h-[500px]">
                    {/* Gunakan h-auto agar proporsional, object-cover agar mengisi & dipotong jika perlu */}
-                   <img src="../src/assets/hero.png" alt="Ilustrasi Donasi" className="w-full h-auto object-cover" /> 
+                   <img src={heroImageUrl} alt="Ilustrasi Donasi" className="w-full h-auto object-cover" />
                 </div>
             </motion.div>
 
