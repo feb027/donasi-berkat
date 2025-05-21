@@ -55,7 +55,7 @@ function WishlistDetailPage() {
     const { id } = useParams();
     const navigate = useNavigate();
     const { user } = useAuth();
-    const { openChatWidget } = useChat();
+    const { startOrOpenChat } = useChat();
 
     const [wishlistItem, setWishlistItem] = useState(null);
     const [loading, setLoading] = useState(true);
@@ -127,7 +127,7 @@ function WishlistDetailPage() {
             return;
         }
 
-        openChatWidget(wishlistItem.id_peminta);
+        startOrOpenChat(wishlistItem.id_peminta);
     };
 
     const getInitials = (name) => {

@@ -549,7 +549,7 @@ function Layout() {
                 <ul className="space-y-4 text-sm">
                   <li className="flex items-start gap-3">
                       <MapPinIcon className="h-5 w-5 text-emerald-500 mt-0.5 flex-shrink-0" />
-                      <span>Jl. Contoh No. 123, Kota Anda</span>
+                      <span>Jl. Siliwangi No. 12, Tasikmalaya</span>
                   </li>
                   <li className="flex items-center gap-3">
                        <EnvelopeIcon className="h-5 w-5 text-emerald-500 flex-shrink-0" />
@@ -557,7 +557,7 @@ function Layout() {
                   </li>
                    <li className="flex items-center gap-3">
                        <PhoneIcon className="h-5 w-5 text-emerald-500 flex-shrink-0" />
-                       <span>(021) 123-4567</span>
+                       <span>(+62) 85314493791</span>
                   </li>
                   <li className="flex items-center gap-3">
                        <ClockIcon className="h-5 w-5 text-emerald-500 flex-shrink-0" />
